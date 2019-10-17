@@ -14,7 +14,7 @@ import sys
 np.set_printoptions(threshold=sys.maxsize)
 
 
-epochs = 1
+epochs = 100
 verbose = 1
 batch_size = 100
 n = 1
@@ -23,7 +23,7 @@ data_set = "oxford_flowers102"
 
 scores = []
 
-top_5_acc = functools.partial(keras.metrics.top_k_categorical_accuracy, k=3)
+top_5_acc = functools.partial(keras.metrics.top_k_categorical_accuracy, k=5)
 
 top_5_acc.__name__ = 'top_5_acc'
 
@@ -62,9 +62,9 @@ def load_data():
     test_labels = np.array(test_labels)
     test_labels = utils.to_categorical(test_labels)
 
+
     val_images = []
     val_labels = []
-
     for example in val_data.take(1020):
         image, label = example['image'], example['label']
         image = tf.image.convert_image_dtype(image, tf.float32)
@@ -87,7 +87,7 @@ def visualize(data_train, data_test, info):
     tfds.show_examples(info, data_test)
 
 
-def run_training(train_images, train_labels, test_images, test_labels, val_images, val_labels):
+def run_training(train_data, test_data, val_data):
     model = keras.Sequential()
     model.add(keras.layers.Conv2D(input_shape=(256, 256, 3),
                                   kernel_size=(11, 11),
@@ -161,26 +161,16 @@ def run_training(train_images, train_labels, test_images, test_labels, val_image
                   loss='categorical_crossentropy',
                   metrics=['acc', top_5_acc])
 
-    history = model.fit(train_images,
-                        train_labels,
+    history = model.fit(train_data,
                         epochs=epochs,
-                        batch_size=batch_size,
-                        validation_data=(val_images, val_labels),
-                        verbose=1)
+                        validation_data=val_data,
+                        verbose=1,
+                        steps_per_epoch=50)
 
-    _, accuracy = model.evaluate(test_images,
-                                 test_labels,
-                                 batch_size=batch_size,
-                                 verbose=2)
+    _, accuracy = model.evaluate(test_data,
+                                 verbose=1)
 
     scores.append(accuracy)
-
-    history_dict = history.history
-
-    acc = history_dict['acc']
-    loss = history_dict['loss']
-    val_acc = history_dict['val_acc']
-    val_loss = history_dict['val_loss']
 
     return model
 
@@ -188,21 +178,37 @@ def predictions(model, test_images, test_labels):
 
     predictions = model.predict(test_images)
     print(predictions[0])
+    plt.bar([i for i in range(len(predictions[0]))], predictions[0])
+    plt.show()
     print(np.argmax(predictions[0]))
     print(test_labels[0])
 
 
 def run_experiment(n):
     for experiments in range(n):
-        data_train, data_test, train_images, train_labels, \
-        test_images, test_labels, val_images, val_labels, info = load_data()
+        data_train, data_test, \
+        train_images, train_labels, \
+        test_images, test_labels, \
+        val_images, val_labels, \
+        info = load_data()
+
         visualize(data_train, data_test, info)
+
         plt.imshow(train_images[0])
         plt.show()
-        model = run_training(train_images, train_labels, test_images, test_labels, val_images, val_labels)
+
+        train_data = tf.data.Dataset.from_tensor_slices((train_images, train_labels))
+        train_data = train_data.repeat().shuffle(1024).batch(32)
+
+        test_data = tf.data.Dataset.from_tensor_slices((test_images, test_labels))
+        test_data = test_data.repeat().shuffle(1024).batch(32)
+
+        val_data = tf.data.Dataset.from_tensor_slices((val_images, val_labels))
+        val_data = val_data.batch(64)
+
+        model = run_training(train_data, test_data, val_data)
+
         predictions(model, test_images, test_labels)
-        plt.tight_layout()
-        plt.show()
 
     print(scores)
     print('M={}'.format(np.mean(scores)), 'STD={}'.format(np.std(scores)))
