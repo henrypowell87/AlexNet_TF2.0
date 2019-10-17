@@ -9,8 +9,10 @@ from keras import utils
 import functools
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 
-np.set_printoptions(precision=4)
+np.set_printoptions(threshold=sys.maxsize)
+
 
 epochs = 1
 verbose = 1
@@ -45,7 +47,7 @@ def load_data():
         train_labels.append(label.numpy())
     train_images = np.array(train_images)
     train_labels = np.array(train_labels)
-    train_labels = utils.to_categorical(train_labels, num_classes=102)
+    train_labels = utils.to_categorical(train_labels)
 
     test_images = []
     test_labels = []
@@ -58,7 +60,7 @@ def load_data():
         test_labels.append(label.numpy())
     test_images = np.array(test_images)
     test_labels = np.array(test_labels)
-    test_labels = utils.to_categorical(test_labels, num_classes=102)
+    test_labels = utils.to_categorical(test_labels)
 
     val_images = []
     val_labels = []
@@ -71,7 +73,7 @@ def load_data():
         val_labels.append(label.numpy())
     val_images = np.array(val_images)
     val_labels = np.array(val_labels)
-    val_labels = utils.to_categorical(val_labels, num_classes=102)
+    val_labels = utils.to_categorical(val_labels)
 
     return data_train, data_test,\
            train_images, train_labels,\
@@ -96,6 +98,7 @@ def run_training(train_images, train_labels, test_images, test_labels, val_image
     model.add(keras.layers.MaxPooling2D(pool_size=(2, 2),
                                         strides=(2, 2),
                                         padding="valid"))
+    model.add(keras.layers.BatchNormalization())
 
     model.add(keras.layers.Conv2D(kernel_size=(11, 11),
                                   strides=(1, 1),
@@ -105,18 +108,21 @@ def run_training(train_images, train_labels, test_images, test_labels, val_image
     model.add(keras.layers.MaxPooling2D(pool_size=(2, 2),
                                         strides=(2, 2),
                                         padding="valid"))
+    model.add(keras.layers.BatchNormalization())
 
     model.add(keras.layers.Conv2D(kernel_size=(3, 3),
                                   strides=(1, 1),
                                   padding="valid",
                                   filters=384,
                                   activation=tf.nn.relu))
+    model.add(keras.layers.BatchNormalization())
 
     model.add(keras.layers.Conv2D(kernel_size=(3, 3),
                                   strides=(1, 1),
                                   padding="valid",
                                   filters=384,
                                   activation=tf.nn.relu))
+    model.add(keras.layers.BatchNormalization())
 
     model.add(keras.layers.Conv2D(kernel_size=(3, 3),
                                   strides=(1, 1),
@@ -126,20 +132,25 @@ def run_training(train_images, train_labels, test_images, test_labels, val_image
     model.add(keras.layers.MaxPooling2D(pool_size=(2, 2),
                                         strides=(2, 2),
                                         padding="valid"))
+    model.add(keras.layers.BatchNormalization())
+
     model.add(keras.layers.Flatten())
 
     model.add(keras.layers.Dense(units=4096,
                                  input_shape=(256, 256, 3),
                                  activation=tf.nn.relu))
     model.add(keras.layers.Dropout(rate=0.4))
+    model.add(keras.layers.BatchNormalization())
 
     model.add(keras.layers.Dense(units=4096,
                                  activation=tf.nn.relu))
     model.add(keras.layers.Dropout(rate=0.4))
+    model.add(keras.layers.BatchNormalization())
 
-    model.add(keras.layers.Dense(units=102,
+    model.add(keras.layers.Dense(units=1000,
                                  activation=tf.nn.relu))
     model.add(keras.layers.Dropout(rate=0.4))
+    model.add(keras.layers.BatchNormalization())
 
     model.add(keras.layers.Dense(units=102,
                                  activation=tf.nn.softmax))
@@ -147,7 +158,7 @@ def run_training(train_images, train_labels, test_images, test_labels, val_image
     model.summary()
 
     model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
+                  loss='categorical_crossentropy',
                   metrics=['acc', top_5_acc])
 
     history = model.fit(train_images,
