@@ -5,6 +5,7 @@ from __future__ import print_function
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from tensorflow import keras
+from keras import utils
 import functools
 import numpy as np
 import matplotlib.pyplot as plt
@@ -44,6 +45,7 @@ def load_data():
         train_labels.append(label.numpy())
     train_images = np.array(train_images)
     train_labels = np.array(train_labels)
+    train_labels = utils.to_categorical(train_labels, num_classes=102)
 
     test_images = []
     test_labels = []
@@ -56,6 +58,7 @@ def load_data():
         test_labels.append(label.numpy())
     test_images = np.array(test_images)
     test_labels = np.array(test_labels)
+    test_labels = utils.to_categorical(test_labels, num_classes=102)
 
     val_images = []
     val_labels = []
@@ -68,6 +71,7 @@ def load_data():
         val_labels.append(label.numpy())
     val_images = np.array(val_images)
     val_labels = np.array(val_labels)
+    val_labels = utils.to_categorical(val_labels, num_classes=102)
 
     return data_train, data_test,\
            train_images, train_labels,\
