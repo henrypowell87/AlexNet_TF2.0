@@ -21,10 +21,14 @@ import functools
 import numpy as np
 import matplotlib.pyplot as plt
 
+project_path = '/Users/henryp/PycharmProjects/AlexNet/'
+data_path = '/Users/henryp/PycharmProjects/AlexNet/data/'
+
 # Set global variables.
-epochs = 1
+epochs = 90
 verbose = 1
-steps_per_epoch = 10
+steps_per_epoch = 100
+batch_size = 100
 n = 1
 
 # Set the dataset which will be downladed and stored in system memory.
@@ -41,6 +45,24 @@ top_5_acc = functools.partial(keras.metrics.top_k_categorical_accuracy, k=5)
 top_5_acc.__name__ = 'top_5_acc'
 
 
+# Create a generator class to generate the data in batches to train the network
+class DataGenerator(utils.Sequence):
+
+    def __init__(self, image_file_names, labels, batch_size):
+        self.image_file_names = image_file_names
+        self.labels = labels
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return (np.ceil(len(self.image_file_names) / float(self.batch_size))).astype(np.int)
+
+    def __getitem__(self, index):
+        batch_image = self.image_file_names[index * self.batch_size: (index+1) * self.batch_size]
+        batch_label = self.labels[index * self.batch_size: (index+1) * self.batch_size]
+
+        return np.array(batch_image), np.array(batch_label)
+
+
 def load_data():
     """
     Function for loading and augmenting the training, testing, and validation data.
@@ -50,39 +72,148 @@ def load_data():
     # Load the data using TensorFlow datasets API.
     data_train, info = tfds.load(name=data_set, split='test', with_info=True)
     data_test = tfds.load(name=data_set, split='train')
-    val_data = tfds.load(name=data_set, split='validation')
+    data_val = tfds.load(name=data_set, split='validation')
 
     # Ensure that loaded data is of the right type.
     assert isinstance(data_train, tf.data.Dataset)
     assert isinstance(data_test, tf.data.Dataset)
+    assert isinstance(data_val, tf.data.Dataset)
 
     # Prints the dataset information.
     print(info)
+
+    return data_train, data_test, data_val, info
+
+
+def save_data():
+    """
+    If you have less than 16GB of RAM for Oxford_flowers and you want to use the augmented training dataset
+    (with rotations etc) you will need to save it to hard disk and then use a generator to train your networks.
+    This function saves the images (including augmented ones) to hard disk.
+    :return:
+    """
+
+    file_no = 1
+
+    data = tfds.load(name=data_set, split='train')
+    assert isinstance(data, tf.data.Dataset)
+
+    labels = []
+    file_names = []
+
+    for example in data:
+
+        image, label = example['image'], example['label']
+
+        # Resize images and add to dataset
+        image = tf.image.convert_image_dtype(image, tf.float32)
+        image = tf.image.resize(image, [256, 256])
+        labels.append(label.numpy())
+        np.save(data_path + 'NParray_' + str(file_no), image)
+        file_names.append('NParray_' + str(file_no))
+        file_no += 1
+
+        # Apply rotation to each image and add a copy to the dataset
+        image_rot = tf.image.rot90(image)
+        labels.append(label.numpy())
+        np.save(data_path + 'NParray_' + str(file_no), image_rot)
+        file_names.append('NParray_' + str(file_no))
+        file_no += 1
+
+        # Left-right and up-down flip images and add copies to dataset
+        image_up_flip = tf.image.flip_up_down(image)
+        labels.append(label.numpy())
+        np.save(data_path + 'NParray_' + str(file_no), image_up_flip)
+        file_names.append('NParray_' + str(file_no))
+        file_no += 1
+
+        image_left_flip = tf.image.flip_left_right(image)
+        labels.append(label.numpy())
+        np.save(data_path + 'NParray_' + str(file_no), image_left_flip)
+        file_names.append('NParray_' + str(file_no))
+        file_no += 1
+
+        # Apply random saturation change and add a copy to the dataset
+        image_sat = tf.image.random_saturation(image, lower=0.2, upper=0.8)
+        labels.append(label.numpy())
+        np.save(data_path + 'NParray_' + str(file_no), image_sat)
+        file_names.append('NParray_' + str(file_no))
+        file_no += 1
+
+    # One hot encode labels
+    print(len(labels))
+    labels = np.array(labels)
+    labels = utils.to_categorical(labels)
+
+    # Save labels array to disk
+    np.save(project_path + 'oh_labels', labels)
+
+    # Save filenames array to disk
+    file_names = np.array(file_names)
+    np.save(project_path + 'file_names', file_names)
+
+
+def preprocess_data(data_train, data_test, data_val, augment=False, generator=False):
+    """
+    Prerocesses the data by applying resizing, the augments the dataset with rotated and translated versions of
+    each image to prevent the model overfitting.
+    :param data_train: tf.data.Dataset object containing the training data
+    :param data_test: tf.data.Dataset object containing the test data
+    :param data_val: tf.data.Dataset object containing the validation data
+    :param augment: Set to True if you want to augment the training data and add it to the dataset for training.
+    :return: data_train, data_test, data_val,train_images, train_labels, test_images, test_labels, val_images,
+    val_labels - training, test, and validation datasets as tf.data.Dataset objects and individual image, and l
+    abel arrays for each.
+    """
 
     train_images = []
     train_labels = []
 
     # Here we take all the samples in the training set (6149), convert the data type to float32 and resize.
-    # Since the images in Oxford_Flowers are not pre processed we need to resize them all so that the network
-    # takes inputs that are all the same size.
+    # Since the images in Oxford_Flowers are not preprocessed we need to resize them all so that the network
+    # takes inputs that are all the same size. We will also transform the data to help the network generalize.
     for example in data_train.take(-1):
+        # Get images and labels from the Dataset object
         image, label = example['image'], example['label']
+
+        # Resize images and add to dataset
         image = tf.image.convert_image_dtype(image, tf.float32)
         image = tf.image.resize(image, [256, 256])
-        train_images.append(image.numpy())
-        train_labels.append(label.numpy())
+        # train_images.append(image.numpy())
+        # train_labels.append(label.numpy())
 
-    # We then convert the lists of images and labels to numpy arrays.
-    train_images = np.array(train_images)
-    train_labels = np.array(train_labels)
-    # And change the labels to one-hot encoded vectors (this is so we can use the categorical_cross entropy loss
-    # function.
-    train_labels = utils.to_categorical(train_labels)
+        # if augment:
+        #     # Apply rotation to each image and add a copy to the dataset
+        #     image_rot = tf.image.rot90(image)
+        #     train_images.append(image_rot.numpy())
+        #     train_labels.append(label.numpy())
+        #
+        #     # Left-right and up-down flip images and add copies to dataset
+        #     image_up_flip = tf.image.flip_up_down(image)
+        #     train_images.append(image_up_flip.numpy())
+        #     train_labels.append(label.numpy())
+        #
+        #     image_left_flip = tf.image.flip_left_right(image)
+        #     train_images.append(image_left_flip.numpy())
+        #     train_labels.append(label.numpy())
+        #
+        #     # Apply random saturation change and add a copy to the dataset
+        #     image_sat = tf.image.random_saturation(image, lower=0.2, upper=0.8)
+        #     train_images.append(image_sat.numpy())
+        #     train_labels.append(label.numpy())
+        # else: continue
+
+    # if generator==False:
+    #     # We then convert the lists of images and labels to numpy arrays.
+    #     train_images = np.array(train_images)
+    #     train_labels = np.array(train_labels)
+    #     # And change the labels to one-hot encoded vectors (this is so we can use the categorical_cross entropy loss
+    #     # function).
+    #     train_labels = utils.to_categorical(train_labels)
 
     # We now do as above but with the test and validation datasets.
     test_images = []
     test_labels = []
-
     for example in data_test.take(-1):
         image, label = example['image'], example['label']
         image = tf.image.convert_image_dtype(image, tf.float32)
@@ -95,7 +226,7 @@ def load_data():
 
     val_images = []
     val_labels = []
-    for example in val_data.take(-1):
+    for example in data_val.take(-1):
         image, label = example['image'], example['label']
         image = tf.image.convert_image_dtype(image, tf.float32)
         image = tf.image.resize(image, [256, 256])
@@ -105,11 +236,8 @@ def load_data():
     val_labels = np.array(val_labels)
     val_labels = utils.to_categorical(val_labels)
 
-    return data_train, data_test,\
-           train_images, train_labels,\
-           test_images, test_labels,\
-           val_images, val_labels,\
-           info
+    return data_train, data_test, data_val, \
+           train_images, train_labels, test_images, test_labels, val_images, val_labels
 
 
 def visualize(data_train, data_test, info):
@@ -125,12 +253,13 @@ def visualize(data_train, data_test, info):
     tfds.show_examples(info, data_test)
 
 
-def run_training(train_data, test_data, val_data):
+def run_training(train_data, test_data, val_data, generator=False):
     """
     Build, compile, fit, and evaluate the AlexNet model using Keras.
     :param train_data: a tf.data.Dataset object containing (image, label) tuples of training data.
     :param test_data: a tf.data.Dataset object containing (image, label) tuples of test data.
     :param val_data: a tf.data.Dataset object containing (image, label) tuples of validation data.
+    :param generator: Set to true if using a generator to train the network.
     :return: trained model object.
     """
 
@@ -223,14 +352,25 @@ def run_training(train_data, test_data, val_data):
                   loss='categorical_crossentropy',
                   metrics=['acc', top_5_acc])
 
-    # Fir the model on the training data and validate on the validation data.
-    model.fit(train_data,
-              epochs=epochs,
-              validation_data=val_data,
-              verbose=verbose,
-              steps_per_epoch=steps_per_epoch)
+    # Fit the model on the training data and validate on the validation data.
+    if generator:
 
-    print(model.metrics_names)
+        file_names = np.load(data_path + 'file_names.npy')
+        num_files = file_names.shape[0]
+        del file_names
+
+        model.fit_generator(generator=train_data,
+                            steps_per_epoch=int(num_files // batch_size),
+                            epochs=epochs,
+                            verbose=verbose,
+                            validation_data=val_data)
+
+    else:
+        model.fit(train_data,
+                  epochs=epochs,
+                  validation_data=val_data,
+                  verbose=verbose,
+                  steps_per_epoch=steps_per_epoch)
 
     # Evaluate the model
     loss, accuracy, top_5 = model.evaluate(test_data,
@@ -246,7 +386,7 @@ def run_training(train_data, test_data, val_data):
     return model
 
 
-def predictions(model, test_images, test_labels):
+def predictions(model, val_images, val_labels, num_examples=1):
     """
     Display some examples of the predicions that the network is making on the testing data.
     :param model: model object
@@ -255,50 +395,65 @@ def predictions(model, test_images, test_labels):
     :return: n/a
     """
 
-    predictions = model.predict(test_images)
+    predictions = model.predict(val_images)
 
-    plt.subplot(1, 2, 1)
-    # Plot first predicted image
-    plt.imshow(test_images[0])
-    plt.show()
+    for i in range(num_examples):
+        plt.subplot(1, 2, 1)
+        # Plot first predicted image
+        plt.imshow(val_images[i])
 
-    plt.subplot(1, 2, 2)
-    # Plot bar plot of confidence of predictions of possible classes for the first image in the test data
-    plt.bar([i for i in range(len(predictions[0]))], predictions[0])
-    plt.show()
+        plt.subplot(1, 2, 2)
+        # Plot bar plot of confidence of predictions of possible classes for the first image in the test data
+        plt.bar([j for j in range(len(predictions[i]))], predictions[i])
+        plt.show()
 
 
-def run_experiment(n):
+def run_experiment(n, large_data_set=False, generator=False):
     """
     Run an experiment. One experiment loads the dataset, trains the model, and outputs the evaluation metrics after
     training.
     :param n: Number of experiments to perform
+    :param large_data_set: Set to True of you want to save the large dataset to hard disk and use generator for training
+    :param generator: Set to True is you want to use a generator to train the network.
     :return: n/a
     """
     for experiments in range(n):
+        # Fix this (messy)
+        if large_data_set:
+            save_data()
 
-        data_train, data_test, train_images, train_labels, test_images, test_labels, val_images, val_labels, info \
-            = load_data()
+        else:
+            data_train, data_test, data_val, info = load_data()
 
-        visualize(data_train, data_test, info)
+            data_train, data_test, data_val,\
+            train_images, train_labels, test_images, test_labels,\
+            val_images, val_labels = preprocess_data(data_train, data_test, data_val)
 
-        # Print the first resized training image as a sanity check
-        plt.imshow(train_images[0])
-        plt.show()
+            visualize(data_train, data_test, info)
 
-        # Make image, label paris into a tf.data.Dataset, shuffle the data and specify batch size.
-        train_data = tf.data.Dataset.from_tensor_slices((train_images, train_labels))
-        train_data = train_data.repeat().shuffle(1024).batch(100)
+            # Print the first resized training image as a sanity check
+            plt.imshow(train_images[0])
+            plt.show()
 
-        test_data = tf.data.Dataset.from_tensor_slices((test_images, test_labels))
-        test_data = test_data.repeat().shuffle(1024).batch(100)
+            if generator:
+                train_images_file_names = np.load('/Users/henryp/PycharmProjects/AlexNet/file_names.npy')
+                train_labels = np.load('/Users/henryp/PycharmProjects/AlexNet/oh_labels.npy')
+                train_data = DataGenerator(train_images_file_names, train_labels, batch_size)
 
-        val_data = tf.data.Dataset.from_tensor_slices((val_images, val_labels))
-        val_data = val_data.batch(100)
+            else:
+                # Make image, label paris into a tf.data.Dataset, shuffle the data and specify batch size.
+                train_data = tf.data.Dataset.from_tensor_slices((train_images, train_labels))
+                train_data = train_data.repeat().shuffle(6149).batch(100)
 
-        model = run_training(train_data, test_data, val_data)
+            test_data = tf.data.Dataset.from_tensor_slices((test_images, test_labels))
+            test_data = test_data.repeat().shuffle(1020).batch(batch_size)
 
-        predictions(model, test_images, test_labels)
+            val_data = tf.data.Dataset.from_tensor_slices((val_images, val_labels))
+            val_data = val_data.batch(batch_size)
+
+            model = run_training(train_data, test_data, val_data)
+
+            predictions(model, test_images, test_labels, num_examples=5)
 
     # Print the mean, std, min, and max of the validation accuracy scores from your experiment.
     print(acc_scores)
@@ -306,5 +461,5 @@ def run_experiment(n):
     print('Min_accuracy={}'.format(np.min(acc_scores)), 'Max_accuracy={}'.format(np.max(acc_scores)))
 
 
-run_experiment(n)
+run_experiment(n, large_data_set=False, generator=True)
 
