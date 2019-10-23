@@ -153,7 +153,7 @@ def save_data():
     np.save(project_path + 'file_names', file_names)
 
 
-def preprocess_data(data_train, data_test, data_val, augment=False, generator=False):
+def preprocess_data(data_train, data_test, data_val):
     """
     Prerocesses the data by applying resizing, the augments the dataset with rotated and translated versions of
     each image to prevent the model overfitting.
@@ -179,37 +179,8 @@ def preprocess_data(data_train, data_test, data_val, augment=False, generator=Fa
         # Resize images and add to dataset
         image = tf.image.convert_image_dtype(image, tf.float32)
         image = tf.image.resize(image, [256, 256])
-        # train_images.append(image.numpy())
-        # train_labels.append(label.numpy())
-
-        # if augment:
-        #     # Apply rotation to each image and add a copy to the dataset
-        #     image_rot = tf.image.rot90(image)
-        #     train_images.append(image_rot.numpy())
-        #     train_labels.append(label.numpy())
-        #
-        #     # Left-right and up-down flip images and add copies to dataset
-        #     image_up_flip = tf.image.flip_up_down(image)
-        #     train_images.append(image_up_flip.numpy())
-        #     train_labels.append(label.numpy())
-        #
-        #     image_left_flip = tf.image.flip_left_right(image)
-        #     train_images.append(image_left_flip.numpy())
-        #     train_labels.append(label.numpy())
-        #
-        #     # Apply random saturation change and add a copy to the dataset
-        #     image_sat = tf.image.random_saturation(image, lower=0.2, upper=0.8)
-        #     train_images.append(image_sat.numpy())
-        #     train_labels.append(label.numpy())
-        # else: continue
-
-    # if generator==False:
-    #     # We then convert the lists of images and labels to numpy arrays.
-    #     train_images = np.array(train_images)
-    #     train_labels = np.array(train_labels)
-    #     # And change the labels to one-hot encoded vectors (this is so we can use the categorical_cross entropy loss
-    #     # function).
-    #     train_labels = utils.to_categorical(train_labels)
+        train_images.append(image.numpy())
+        train_labels.append(label.numpy())
 
     # We now do as above but with the test and validation datasets.
     test_images = []
@@ -430,10 +401,6 @@ def run_experiment(n, large_data_set=False, generator=False):
             val_images, val_labels = preprocess_data(data_train, data_test, data_val)
 
             visualize(data_train, data_test, info)
-
-            # Print the first resized training image as a sanity check
-            plt.imshow(train_images[0])
-            plt.show()
 
             if generator:
                 train_images_file_names = np.load('/Users/henryp/PycharmProjects/AlexNet/file_names.npy')
